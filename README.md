@@ -227,13 +227,3 @@ tabulate>=0.9
 
 MIT License — see [LICENSE](LICENSE) for details.
 
----
-
-## Author
-
-Built by **[Kelil02](https://github.com/Kelil02)** as a portfolio project demonstrating:
-- Windows low-level programming (ctypes, WinAPI)
-- Memory forensics concepts
-- Security pattern matching
-- Full-stack Python (CLI + Web)
-- Data visualization (Chart.js)
