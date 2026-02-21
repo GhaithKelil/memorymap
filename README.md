@@ -9,8 +9,6 @@
   <img src="https://img.shields.io/badge/License-MIT-green" />
 </p>
 
----
-
 ## What is MemoryMap?
 
 MemoryMap is a **live memory forensics tool** for Windows that:
@@ -21,21 +19,17 @@ MemoryMap is a **live memory forensics tool** for Windows that:
 4. **Visualizes everything** — Interactive dark-mode web dashboard with Chart.js
 5. **Exports a report** — Self-contained HTML forensics report you can print to PDF
 
----
-
 ## Demo
 
 ### Live Dashboard
 ![MemoryMap Dashboard](assets/dashboard.png)
 
-*106 findings from python3.11.exe — Risk Score 100/100 CRITICAL*
+*130 findings from python3.11.exe — Risk Score 100/100 CRITICAL*
 
 ### Anomaly Detection Panel
 ![Anomaly Detection](assets/anomalies.png)
 
 *PE injection indicators, high-entropy regions (7.7 bits/byte), shellcode string matches*
-
----
 
 ## Features
 
@@ -81,26 +75,18 @@ Detects sensitive data in raw memory using 20+ compiled regex patterns:
 - Cover page with risk banner
 - Executive summary with narrative + stats
 - Complete findings table
-- Anomaly cards
-- Memory map
-- `🖨️ Print / Save PDF` button for PDF export
-
----
+- Anomaly cards + memory map
+- 🖨️ Print / Save PDF button
 
 ## Installation
 
 ```bash
-# Clone the repo
-git clone https://github.com/Kelil02/memorymap.git
+git clone https://github.com/GhaithKelil/memorymap.git
 cd memorymap
-
-# Install dependencies
 pip install psutil pywin32 flask colorama tabulate
 ```
 
-> ⚠️ **Windows only** — uses `ctypes` for direct Windows API calls (`VirtualQueryEx`, `ReadProcessMemory`)
-
----
+> ⚠️ **Windows only** — uses `ctypes` for direct Windows API calls
 
 ## Usage
 
@@ -108,7 +94,6 @@ pip install psutil pywin32 flask colorama tabulate
 ```bash
 python cli.py
 ```
-Presents an interactive table of running processes. Select a target by number.
 
 ### Target a specific PID
 ```bash
@@ -124,36 +109,26 @@ Then open **http://localhost:5000** in your browser.
 > Run as **Administrator** for full access to system processes. Python/browser/node processes work without admin.
 
 ### Export Report
-Click the **📄 Export Report** button in the dashboard header, or visit:
-```
-http://localhost:5000/export
-```
-Downloads a self-contained HTML file you can open in any browser and print to PDF.
-
----
+Click the **📄 Export Report** button in the dashboard header, or go to `http://localhost:5000/export`. Downloads a self-contained HTML file you can print to PDF.
 
 ## Project Structure
 
 ```
 memorymap/
 ├── core/
-│   ├── reader.py       # Windows memory API — ctypes VirtualQueryEx + ReadProcessMemory
-│   ├── scanner.py      # 20+ regex secret patterns → Finding objects
-│   ├── analyzer.py     # Risk score (log scale) + category grouping → AnalysisReport
-│   └── anomaly.py      # 7-technique behavioral anomaly detector → Anomaly objects
+│   ├── reader.py       # Windows memory API — VirtualQueryEx + ReadProcessMemory
+│   ├── scanner.py      # 20+ regex secret patterns
+│   ├── analyzer.py     # Risk scoring + report
+│   └── anomaly.py      # 7-technique behavioral anomaly detector
 ├── ui/
-│   ├── app.py          # Flask server — /api/report, /api/regions, /api/anomalies, /export
+│   ├── app.py          # Flask server + API endpoints
 │   └── templates/
-│       └── dashboard.html  # Chart.js dark-mode SPA
+│       └── dashboard.html
 ├── reports/
-│   ├── generator.py    # Self-contained HTML report builder
-│   └── output/         # Generated report files (gitignored)
-├── cli.py              # Interactive CLI entry point
-├── requirements.txt
-└── README.md
+│   └── generator.py    # Self-contained HTML report builder
+├── cli.py
+└── requirements.txt
 ```
-
----
 
 ## How It Works
 
@@ -161,31 +136,28 @@ memorymap/
 Process (PID)
     │
     ▼
-[reader.py]  ──── VirtualQueryEx ──▶ MemoryRegion list
-                  ReadProcessMemory ─▶ raw bytes per region
+reader.py   →  VirtualQueryEx + ReadProcessMemory  →  raw bytes per region
     │
     ▼
-[scanner.py] ──── 20+ regex patterns ──▶ Finding list (category, severity, address, match)
+scanner.py  →  20+ regex patterns  →  Finding list (category, severity, address)
     │
     ▼
-[anomaly.py] ──── 7 heuristics ────────▶ Anomaly list (type, severity, detail)
+anomaly.py  →  7 heuristics        →  Anomaly list (type, severity, detail)
     │
     ▼
-[analyzer.py] ─── risk score + grouping ▶ AnalysisReport
+analyzer.py →  risk score + grouping  →  AnalysisReport
     │
-    ├──▶ [ui/app.py]          Web dashboard (Flask + Chart.js)
-    └──▶ [reports/generator]  HTML forensics report
+    ├──▶  ui/app.py          (web dashboard)
+    └──▶  reports/generator  (HTML export)
 ```
-
----
 
 ## Risk Score
 
-The risk score (0–100) uses a logarithmic formula to prevent a flood of low-severity findings from masking critical ones:
+Scores use a logarithmic formula so one massive process with many LOW findings doesn't drown out a single CRITICAL hit:
 
 ```
-raw_score = Σ (severity_weight × count)
-score     = min(100, 50 × log10(raw_score + 1))
+raw   = Σ (severity_weight × count)
+score = min(100, 50 × log10(raw + 1))
 ```
 
 | Label | Score |
@@ -196,20 +168,15 @@ score     = min(100, 50 × log10(raw_score + 1))
 | HIGH | 61–80 |
 | CRITICAL | 81–100 |
 
----
-
 ## Real-World Results
 
-Scanning **`python3.11.exe`** (a standard Python process) revealed:
+Scanning **`python3.11.exe`** (a standard Python process) found:
 
-- ✅ Credit card number in heap memory
+- ✅ Credit card numbers in heap memory
 - ✅ Bitcoin addresses in interpreter memory
-- ✅ Developer email addresses from Python stdlib
-- ✅ PE/MZ headers in private regions (Python C-extensions loaded reflectively)
+- ✅ PE/MZ headers in private regions (C-extensions loaded reflectively)
 - ✅ High entropy regions (7.7 bits/byte) — likely compressed bytecode
 - ✅ Meterpreter & ReflectiveLoader strings from Python's `ssl` / `ctypes` modules
-
----
 
 ## Requirements
 
@@ -221,9 +188,6 @@ colorama>=0.4
 tabulate>=0.9
 ```
 
----
-
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
-
