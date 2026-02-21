@@ -1,21 +1,11 @@
-"""
-core/reader.py
---------------
-Reads memory regions of a target process using Windows API via ctypes.
-No third-party C extensions required — pure ctypes + psutil.
-"""
-
 import ctypes
 import ctypes.wintypes as wintypes
 import psutil
-import struct
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-# ── Windows constants ──────────────────────────────────────────────────────────
-PROCESS_VM_READ            = 0x0010
-PROCESS_QUERY_INFORMATION  = 0x0400
-PROCESS_ALL_ACCESS         = 0x001F0FFF
+PROCESS_VM_READ           = 0x0010
+PROCESS_QUERY_INFORMATION = 0x0400
 
 MEM_COMMIT  = 0x1000
 MEM_FREE    = 0x10000
@@ -32,8 +22,8 @@ PAGE_EXECUTE_WRITECOPY = 0x80
 PAGE_GUARD             = 0x100
 
 MEM_TYPES = {
-    0x20000: "Private",
-    0x40000: "Mapped",
+    0x20000:   "Private",
+    0x40000:   "Mapped",
     0x1000000: "Image (DLL/EXE)",
 }
 
@@ -48,7 +38,7 @@ PAGE_PROTECT_NAMES = {
     PAGE_EXECUTE_WRITECOPY: "EXEC_WRITE_COPY",
 }
 
-# ── MEMORY_BASIC_INFORMATION struct ───────────────────────────────────────────
+
 class MEMORY_BASIC_INFORMATION(ctypes.Structure):
     _fields_ = [
         ("BaseAddress",       ctypes.c_ulonglong),
@@ -63,14 +53,13 @@ class MEMORY_BASIC_INFORMATION(ctypes.Structure):
     ]
 
 
-# ── Data class for a single region ────────────────────────────────────────────
 @dataclass
 class MemoryRegion:
     base_address:  int
     size:          int
-    state:         str        # COMMIT / RESERVE / FREE
-    protect:       str        # READ_WRITE etc.
-    region_type:   str        # Private / Mapped / Image
+    state:         str   # COMMIT / RESERVE / FREE
+    protect:       str
+    region_type:   str
     is_executable: bool
     is_writable:   bool
     data:          bytes = field(default=b"", repr=False)
@@ -88,7 +77,6 @@ class MemoryRegion:
         return self.size / (1024 * 1024)
 
 
-# ── Helper: decode state/protect/type ─────────────────────────────────────────
 def _decode_state(state: int) -> str:
     return {MEM_COMMIT: "COMMIT", MEM_RESERVE: "RESERVE", MEM_FREE: "FREE"}.get(state, f"0x{state:X}")
 
@@ -106,23 +94,17 @@ def _decode_type(mtype: int) -> str:
 
 
 def _is_executable(protect: int) -> bool:
-    exec_flags = (PAGE_EXECUTE | PAGE_EXECUTE_READ |
-                  PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
-    return bool(protect & exec_flags)
+    flags = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY
+    return bool(protect & flags)
 
 
 def _is_writable(protect: int) -> bool:
-    write_flags = (PAGE_READWRITE | PAGE_WRITECOPY |
-                   PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
-    return bool(protect & write_flags)
+    flags = PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY
+    return bool(protect & flags)
 
 
-# ── Core reader class ─────────────────────────────────────────────────────────
 class ProcessMemoryReader:
-    """
-    Opens a process handle and iterates over all virtual memory regions.
-    Must be run as Administrator for PROCESS_VM_READ on protected processes.
-    """
+    """Opens a handle to a process and walks its virtual address space."""
 
     def __init__(self, pid: int):
         self.pid = pid
@@ -130,7 +112,6 @@ class ProcessMemoryReader:
         self.kernel32 = ctypes.windll.kernel32
 
     def open(self) -> bool:
-        """Open a handle to the target process. Returns True on success."""
         self._handle = self.kernel32.OpenProcess(
             PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
             False,
@@ -139,8 +120,7 @@ class ProcessMemoryReader:
         if not self._handle:
             err = ctypes.get_last_error()
             raise PermissionError(
-                f"Cannot open PID {self.pid}. Error code: {err}. "
-                "Try running as Administrator."
+                f"Cannot open PID {self.pid} (error {err}). Try running as Administrator."
             )
         return True
 
@@ -156,37 +136,27 @@ class ProcessMemoryReader:
     def __exit__(self, *_):
         self.close()
 
-    # ── Region enumeration ────────────────────────────────────────────────────
     def enumerate_regions(self, read_data: bool = True) -> List[MemoryRegion]:
-        """
-        Walk the entire virtual address space and return all memory regions.
-        Set read_data=True to also read the raw bytes from each COMMIT region.
-        """
         regions: List[MemoryRegion] = []
         addr = 0
-        mbi = MEMORY_BASIC_INFORMATION()
-        mbi_size = ctypes.sizeof(mbi)
+        mbi  = MEMORY_BASIC_INFORMATION()
 
         while True:
             ret = self.kernel32.VirtualQueryEx(
                 self._handle,
                 ctypes.c_ulonglong(addr),
                 ctypes.byref(mbi),
-                mbi_size,
+                ctypes.sizeof(mbi),
             )
             if ret == 0:
-                break  # end of address space
-
-            state   = _decode_state(mbi.State)
-            protect = _decode_protect(mbi.Protect)
-            rtype   = _decode_type(mbi.Type)
+                break
 
             region = MemoryRegion(
                 base_address  = mbi.BaseAddress,
                 size          = mbi.RegionSize,
-                state         = state,
-                protect       = protect,
-                region_type   = rtype,
+                state         = _decode_state(mbi.State),
+                protect       = _decode_protect(mbi.Protect),
+                region_type   = _decode_type(mbi.Type),
                 is_executable = _is_executable(mbi.Protect),
                 is_writable   = _is_writable(mbi.Protect),
             )
@@ -197,18 +167,15 @@ class ProcessMemoryReader:
             regions.append(region)
             addr = mbi.BaseAddress + mbi.RegionSize
 
-            # 64-bit address space upper limit
             if addr >= 0x7FFFFFFFFFFF:
                 break
 
         return regions
 
-    # ── Raw memory read ───────────────────────────────────────────────────────
     def _read_region(self, address: int, size: int, chunk: int = 4096) -> bytes:
-        """Read `size` bytes from `address`, in chunks to handle partial failures."""
         result = bytearray()
-        buf = ctypes.create_string_buffer(chunk)
-        read = ctypes.c_size_t(0)
+        buf    = ctypes.create_string_buffer(chunk)
+        read   = ctypes.c_size_t(0)
         offset = 0
 
         while offset < size:
@@ -224,16 +191,13 @@ class ProcessMemoryReader:
                 result.extend(buf.raw[:read.value])
                 offset += read.value
             else:
-                # Unreadable page — pad with zeros and skip
                 result.extend(b"\x00" * to_read)
                 offset += to_read
 
         return bytes(result)
 
 
-# ── Process lister ────────────────────────────────────────────────────────────
 def list_processes() -> List[dict]:
-    """Return a list of running processes with pid, name, and memory info."""
     procs = []
     for proc in psutil.process_iter(["pid", "name", "memory_info", "username"]):
         try:

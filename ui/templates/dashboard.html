@@ -731,7 +731,7 @@
     </div>
 
     <footer>
-      MemoryMap &mdash; RAM Forensics Tool &bull; Built with Python + Flask + Chart.js
+      MemoryMap &mdash; RAM Forensics Tool
     </footer>
 
   </div><!-- /container -->
@@ -930,7 +930,6 @@
 
       badge.textContent = `${data.total} anomalies`;
 
-      // Mini severity pills
       const sev = data.by_severity || {};
       stats.innerHTML = Object.entries(sev)
         .filter(([, v]) => v > 0)
@@ -941,7 +940,6 @@
       </div>`
         ).join('');
 
-      // Cards
       const items = data.items || [];
       const sevOrder = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
       items.sort((a, b) => (sevOrder[b.severity] || 0) - (sevOrder[a.severity] || 0));

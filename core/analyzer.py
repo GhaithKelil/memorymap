@@ -1,13 +1,3 @@
-"""
-core/analyzer.py
-----------------
-Takes raw findings from the scanner and produces a structured analysis:
-  - Risk score (0-100)
-  - Finding categories breakdown
-  - Per-finding context (surrounding bytes decoded as printable chars)
-  - Top findings summary
-"""
-
 import math
 from typing import List, Dict
 from core.scanner import Finding
@@ -39,14 +29,11 @@ class AnalysisReport:
         self.category_map  = self._group_by_category()
         self.severity_map  = self._group_by_severity()
 
-    # ── Risk Score ────────────────────────────────────────────────────────────
     def _calculate_risk(self) -> int:
         raw = sum(SEVERITY_SCORE.get(f.severity, 0) for f in self.findings)
-        # Logarithmic cap so one massive process doesn't get 10000 score
         if raw == 0:
             return 0
-        score = min(100, int(50 * math.log10(raw + 1)))
-        return score
+        return min(100, int(50 * math.log10(raw + 1)))
 
     @property
     def risk_label(self) -> str:
@@ -60,7 +47,6 @@ class AnalysisReport:
             return "LOW"
         return "CLEAN"
 
-    # ── Grouping ──────────────────────────────────────────────────────────────
     def _group_by_category(self) -> Dict[str, List[Finding]]:
         d: Dict[str, List[Finding]] = {}
         for f in self.findings:
@@ -73,7 +59,6 @@ class AnalysisReport:
             d.setdefault(f.severity, []).append(f)
         return d
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
     @property
     def critical_count(self) -> int:
         return len(self.severity_map.get("CRITICAL", []))
@@ -95,26 +80,25 @@ class AnalysisReport:
         return len(self.findings)
 
     def as_dict(self) -> dict:
-        """Serialize to dict for JSON/template use."""
         return {
-            "pid":           self.pid,
-            "process_name":  self.process_name,
-            "total_regions": self.total_regions,
-            "committed_mb":  round(self.committed_mb, 2),
-            "risk_score":    self.risk_score,
-            "risk_label":    self.risk_label,
+            "pid":            self.pid,
+            "process_name":   self.process_name,
+            "total_regions":  self.total_regions,
+            "committed_mb":   round(self.committed_mb, 2),
+            "risk_score":     self.risk_score,
+            "risk_label":     self.risk_label,
             "total_findings": self.total_findings,
-            "critical":      self.critical_count,
-            "high":          self.high_count,
-            "medium":        self.medium_count,
-            "low":           self.low_count,
+            "critical":       self.critical_count,
+            "high":           self.high_count,
+            "medium":         self.medium_count,
+            "low":            self.low_count,
             "findings": [
                 {
-                    "category":    f.category,
-                    "severity":    f.severity,
-                    "match":       f.truncated_match(120),
-                    "address":     f"0x{f.address:016X}",
-                    "pattern":     f.pattern_name,
+                    "category": f.category,
+                    "severity": f.severity,
+                    "match":    f.truncated_match(120),
+                    "address":  f"0x{f.address:016X}",
+                    "pattern":  f.pattern_name,
                 }
                 for f in self.findings
             ],
@@ -131,7 +115,6 @@ def build_report(
     committed_mb:  float,
     findings:      List[Finding],
 ) -> AnalysisReport:
-    """Factory function — build a report from scan results."""
     return AnalysisReport(
         pid=pid,
         process_name=process_name,

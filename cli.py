@@ -1,12 +1,3 @@
-"""
-cli.py
-------
-MemoryMap — main entry point.
-Usage:
-    python cli.py                  # interactive process picker
-    python cli.py --pid 1234       # target process directly
-    python cli.py --list           # just list processes
-"""
 
 import argparse
 import sys
