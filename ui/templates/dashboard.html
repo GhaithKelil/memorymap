@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MemoryMap — RAM Forensics Dashboard</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --cyan: #39d353;
+      --critical: #ff4f4f;
+      --high: #f0a957;
+      --medium: #58a6ff;
+      --low: #8b949e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+
+    /* ── Animated background grid ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(88, 166, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(88, 166, 255, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Layout ── */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 28px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 24px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #58a6ff, #bc8cff);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .logo h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .logo span {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .header-meta {
+      text-align: right;
+    }
+
+    .header-meta .proc {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--accent);
+    }
+
+    .header-meta .pid {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .stat-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .stat-sub {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .stat-critical {
+      color: var(--critical);
+    }
+
+    .stat-high {
+      color: var(--high);
+    }
+
+    .stat-medium {
+      color: var(--accent);
+    }
+
+    .stat-low {
+      color: var(--muted);
+    }
+
+    .stat-clean {
+      color: var(--green);
+    }
+
+    /* ── Risk gauge ── */
+    .risk-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .risk-ring {
+      position: relative;
+      width: 100px;
+      height: 100px;
+    }
+
+    .risk-ring svg {
+      transform: rotate(-90deg);
+    }
+
+    .risk-ring-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .risk-ring-score {
+      font-size: 1.4rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .risk-ring-label {
+      font-size: 0.6rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* ── Grid layout ── */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 900px) {
+
+      .grid-2,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ── Panels ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-badge {
+      font-size: 0.7rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: 12px;
+      color: var(--muted);
+    }
+
+    .panel-body {
+      padding: 20px;
+    }
+
+    /* ── Charts ── */
+    .chart-wrap {
+      position: relative;
+      height: 220px;
+    }
+
+    /* ── Findings table ── */
+    .findings-table-wrap {
+      overflow-x: auto;
+      max-height: 450px;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: var(--surface2);
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 500;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: var(--surface2);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .badge-CRITICAL {
+      background: rgba(248, 81, 73, 0.15);
+      color: var(--critical);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+    }
+
+    .badge-HIGH {
+      background: rgba(240, 169, 87, 0.15);
+      color: var(--high);
+      border: 1px solid rgba(240, 169, 87, 0.3);
+    }
+
+    .badge-MEDIUM {
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+    }
+
+    .badge-LOW {
+      background: rgba(139, 148, 158, 0.1);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .badge-CLEAN {
+      background: rgba(63, 185, 80, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--accent);
+    }
+
+    .match-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Memory map bars ── */
+    .memory-map {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .mem-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.75rem;
+    }
+
+    .mem-bar-wrap {
+      flex: 1;
+      background: var(--surface2);
+      border-radius: 3px;
+      height: 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mem-bar {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.8s ease;
+      display: flex;
+      align-items: center;
+      padding: 0 6px;
+      min-width: 2px;
+      font-size: 0.65rem;
+      color: rgba(255, 255, 255, 0.7);
+      font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .mem-label {
+      width: 120px;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mem-size {
+      width: 60px;
+      text-align: right;
+      color: var(--muted);
+    }
+
+    /* ── Loading overlay ── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loading-text {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Pulse animation for critical ── */
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .pulse {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    /* ── Anomaly cards ── */
+    .anomaly-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 12px;
+    }
+
+    .anomaly-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+
+    .anomaly-card:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+    }
+
+    .anomaly-card.sev-CRITICAL {
+      border-left: 3px solid var(--critical);
+    }
+
+    .anomaly-card.sev-HIGH {
+      border-left: 3px solid var(--high);
+    }
+
+    .anomaly-card.sev-MEDIUM {
+      border-left: 3px solid var(--accent);
+    }
+
+    .anomaly-card.sev-LOW {
+      border-left: 3px solid var(--muted);
+    }
+
+    .anomaly-icon {
+      font-size: 1.4rem;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .anomaly-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .anomaly-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .anomaly-desc {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .anomaly-detail {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--accent);
+      background: rgba(88, 166, 255, 0.06);
+      border: 1px solid rgba(88, 166, 255, 0.15);
+      border-radius: 4px;
+      padding: 4px 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .anomaly-addr {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 32px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      padding: 16px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Loading overlay -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Fetching scan data...</div>
+  </div>
+
+  <div class="container" id="app" style="display:none">
+
+    <!-- Header -->
+    <header>
+      <div class="logo">
+        <div class="logo-icon">🧠</div>
+        <div>
+          <h1>MemoryMap</h1>
+          <span>RAM Forensics & Process Memory Analyzer</span>
+        </div>
+      </div>
+      <div class="header-meta" style="display:flex;align-items:center;gap:16px">
+        <div style="text-align:right">
+          <div class="proc" id="hdr-proc">—</div>
+          <div class="pid" id="hdr-pid">—</div>
+        </div>
+        <a href="/export" target="_blank" style="display:inline-flex;align-items:center;gap:7px;
+                  background:linear-gradient(135deg,#58a6ff,#bc8cff);
+                  color:#fff;font-weight:600;font-size:0.82rem;
+                  padding:9px 18px;border-radius:8px;text-decoration:none;
+                  transition:opacity 0.2s;white-space:nowrap;" onmouseover="this.style.opacity='.8'"
+          onmouseout="this.style.opacity='1'">
+          📄 Export Report
+        </a>
+      </div>
+    </header>
+
+    <!-- Stats bar -->
+    <div class="stats-bar" id="stats-bar">
+      <!-- injected by JS -->
+    </div>
+
+    <!-- Row 1: charts -->
+    <div class="grid-2" style="margin-bottom:20px">
+
+      <!-- Findings by severity -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🔍 Findings by Severity</div>
+          <div class="panel-badge" id="total-badge">0 total</div>
+        </div>
+        <div class="panel-body">
+          <div class="chart-wrap"><canvas id="chartSeverity"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Findings by category -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">📂 Finding Categories</div>
+        </div>
+        <div class="panel-body">
+          <div class="chart-wrap"><canvas id="chartCategories"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: memory map + region type -->
+    <div class="grid-2" style="margin-bottom:20px">
+
+      <!-- Memory region visual map -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🗺️ Memory Region Map</div>
+          <div class="panel-badge" id="region-badge">0 regions</div>
+        </div>
+        <div class="panel-body" id="memory-map-body" style="max-height:300px; overflow-y:auto">
+          <!-- bars injected by JS -->
+        </div>
+      </div>
+
+      <!-- Region type donut -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🧩 Region Types</div>
+        </div>
+        <div class="panel-body">
+          <div class="chart-wrap"><canvas id="chartTypes"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Findings table -->
+    <div class="panel" style="margin-bottom:20px">
+      <div class="panel-header">
+        <div class="panel-title">⚠️ All Findings</div>
+        <input id="filter-input" type="text" placeholder="Filter by category or match…" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+                 padding:5px 10px;color:var(--text);font-size:0.8rem;width:220px" />
+      </div>
+      <div class="findings-table-wrap">
+        <table id="findings-table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Category</th>
+              <th>Memory Address</th>
+              <th>Match (truncated)</th>
+              <th>Pattern</th>
+            </tr>
+          </thead>
+          <tbody id="findings-tbody">
+            <!-- rows injected by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Anomaly Detection panel -->
+    <div class="panel" style="margin-bottom:20px">
+      <div class="panel-header">
+        <div class="panel-title">🛡️ Anomaly Detection</div>
+        <div class="panel-badge" id="anomaly-badge">scanning…</div>
+      </div>
+      <div class="panel-body">
+        <div id="anomaly-stats" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap"></div>
+        <div id="anomaly-grid" class="anomaly-grid">
+          <!-- injected by JS -->
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      MemoryMap &mdash; RAM Forensics Tool &bull; Built with Python + Flask + Chart.js
+    </footer>
+
+  </div><!-- /container -->
+
+  <script>
+    /* ─── Data fetch ──────────────────────────────────────────────────────────── */
+    let reportData = null;
+    let regionsData = null;
+    let anomalyData = null;
+    let allFindings = [];
+
+    async function loadData() {
+      const [rpt, reg, anom] = await Promise.all([
+        fetch('/api/report').then(r => r.json()),
+        fetch('/api/regions').then(r => r.json()),
+        fetch('/api/anomalies').then(r => r.json()),
+      ]);
+      reportData = rpt;
+      regionsData = reg;
+      anomalyData = anom;
+      allFindings = rpt.findings || [];
+    }
+
+    /* ─── Risk color ──────────────────────────────────────────────────────────── */
+    function riskColor(label) {
+      return { CRITICAL: '#f85149', HIGH: '#f0a957', MEDIUM: '#58a6ff', LOW: '#8b949e', CLEAN: '#3fb950' }[label] || '#8b949e';
+    }
+    function sevColor(s) {
+      return { CRITICAL: '#f85149', HIGH: '#f0a957', MEDIUM: '#58a6ff', LOW: '#8b949e' }[s] || '#8b949e';
+    }
+
+    /* ─── Header ──────────────────────────────────────────────────────────────── */
+    function renderHeader(d) {
+      document.getElementById('hdr-proc').textContent = d.process_name;
+      document.getElementById('hdr-pid').textContent = `PID ${d.pid}  ·  ${d.committed_mb} MB  ·  ${d.total_regions} regions`;
+    }
+
+    /* ─── Stats bar ───────────────────────────────────────────────────────────── */
+    function renderStats(d) {
+      const color = riskColor(d.risk_label);
+      const statsBar = document.getElementById('stats-bar');
+      const stats = [
+        { label: 'Risk Score', value: `${d.risk_score}`, sub: `/ 100  [${d.risk_label}]`, cls: `stat-${d.risk_label.toLowerCase()}` },
+        { label: 'Total Findings', value: d.total_findings, sub: 'unique patterns found', cls: '' },
+        { label: 'Critical', value: d.critical, sub: 'findings', cls: 'stat-critical' },
+        { label: 'High', value: d.high, sub: 'findings', cls: 'stat-high' },
+        { label: 'Medium', value: d.medium, sub: 'findings', cls: 'stat-medium' },
+        { label: 'Low', value: d.low, sub: 'findings', cls: 'stat-low' },
+        { label: 'Memory', value: `${d.committed_mb}`, sub: 'MB committed', cls: '' },
+      ];
+      statsBar.innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-value ${s.cls}">${s.value}</div>
+      <div class="stat-sub">${s.sub}</div>
+    </div>
+  `).join('');
+    }
+
+    /* ─── Severity chart ──────────────────────────────────────────────────────── */
+    function renderSeverityChart(d) {
+      const labels = ['Critical', 'High', 'Medium', 'Low'];
+      const values = [d.critical, d.high, d.medium, d.low];
+      const colors = ['#f85149', '#f0a957', '#58a6ff', '#8b949e'];
+
+      new Chart(document.getElementById('chartSeverity'), {
+        type: 'bar',
+        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderRadius: 6, borderSkipped: false }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, beginAtZero: true },
+          }
+        }
+      });
+    }
+
+    /* ─── Category chart ──────────────────────────────────────────────────────── */
+    function renderCategoryChart(d) {
+      const cats = Object.keys(d.categories).slice(0, 8);
+      const counts = cats.map(c => d.categories[c]);
+      const palette = ['#58a6ff', '#bc8cff', '#3fb950', '#f0a957', '#f85149', '#39d353', '#ff7b72', '#79c0ff'];
+
+      new Chart(document.getElementById('chartCategories'), {
+        type: 'doughnut',
+        data: { labels: cats, datasets: [{ data: counts, backgroundColor: palette, borderWidth: 0, hoverOffset: 6 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#8b949e', font: { size: 11 }, padding: 12 } }
+          }
+        }
+      });
+    }
+
+    /* ─── Region type chart ───────────────────────────────────────────────────── */
+    function renderTypesChart(regions) {
+      const typeCounts = {};
+      regions.forEach(r => { typeCounts[r.type] = (typeCounts[r.type] || 0) + 1; });
+      const labels = Object.keys(typeCounts);
+      const values = labels.map(l => typeCounts[l]);
+      const palette = ['#58a6ff', '#bc8cff', '#3fb950', '#f0a957'];
+
+      new Chart(document.getElementById('chartTypes'), {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data: values, backgroundColor: palette, borderWidth: 0, hoverOffset: 4 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'right', labels: { color: '#8b949e', font: { size: 11 }, padding: 12 } } }
+        }
+      });
+    }
+
+    /* ─── Memory map bars ─────────────────────────────────────────────────────── */
+    function renderMemoryMap(regions) {
+      document.getElementById('region-badge').textContent = `${regions.length} committed`;
+      const maxSize = Math.max(...regions.map(r => r.size_kb));
+      const container = document.getElementById('memory-map-body');
+
+      function barColor(r) {
+        if (r.executable && r.writable) return 'linear-gradient(90deg,#f85149,#f0a957)';
+        if (r.executable) return 'linear-gradient(90deg,#bc8cff,#58a6ff)';
+        if (r.writable) return 'linear-gradient(90deg,#3fb950,#58a6ff)';
+        return 'linear-gradient(90deg,#21262d,#30363d)';
+      }
+
+      const top50 = regions.slice(0, 80);
+      container.innerHTML = `<div class="memory-map">${top50.map(r => {
+        const pct = Math.max(1, (r.size_kb / maxSize) * 100);
+        const sizeStr = r.size_kb >= 1024 ? `${(r.size_kb / 1024).toFixed(1)}MB` : `${r.size_kb}KB`;
+        return `
+      <div class="mem-row">
+        <div class="mem-label" title="${r.base}">${r.base.slice(-8)}</div>
+        <div class="mem-bar-wrap">
+          <div class="mem-bar" style="width:${pct}%;background:${barColor(r)}">${r.protect}</div>
+        </div>
+        <div class="mem-size">${sizeStr}</div>
+      </div>`;
+      }).join('')}</div>
+  <div style="margin-top:12px;font-size:0.72rem;color:var(--muted)">
+    <span style="color:#bc8cff">■</span> Executable &nbsp;
+    <span style="color:#3fb950">■</span> Writable &nbsp;
+    <span style="color:#f85149">■</span> Exec+Write (⚠) &nbsp;
+    <span style="color:#30363d">■</span> Read-Only
+  </div>`;
+    }
+
+    /* ─── Findings table ──────────────────────────────────────────────────────── */
+    function renderFindings(findings) {
+      document.getElementById('total-badge').textContent = `${findings.length} total`;
+      const tbody = document.getElementById('findings-tbody');
+      if (!findings.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--green);padding:32px">✔ No findings</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = findings.map(f => `
+    <tr>
+      <td><span class="badge badge-${f.severity}">${f.severity}</span></td>
+      <td>${f.category}</td>
+      <td><span class="mono">${f.address}</span></td>
+      <td><span class="match-text" title="${escHtml(f.match)}">${escHtml(f.match)}</span></td>
+      <td style="color:var(--muted);font-size:0.75rem">${f.pattern}</td>
+    </tr>
+  `).join('');
+    }
+
+    function escHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /* ─── Anomaly icons ───────────────────────────────────────────────────────── */
+    const ANOMALY_ICONS = {
+      HIGH_ENTROPY: '🔐',
+      RWX_REGION: '🔴',
+      PE_IN_PRIVATE: '💉',
+      SUSPICIOUS_STR: '🕷️',
+      STACK_ANOMALY: '📚',
+      UNBACKED_EXEC: '👻',
+      HEAP_EXEC: '⚠️',
+    };
+
+    /* ─── Render anomalies ────────────────────────────────────────────────────── */
+    function renderAnomalies(data) {
+      const badge = document.getElementById('anomaly-badge');
+      const stats = document.getElementById('anomaly-stats');
+      const grid = document.getElementById('anomaly-grid');
+
+      if (!data || !data.total) {
+        badge.textContent = '✔ Clean';
+        badge.style.color = 'var(--green)';
+        grid.innerHTML = `<div style="color:var(--green);padding:20px;text-align:center;width:100%">✔ No anomalies detected in this process</div>`;
+        return;
+      }
+
+      badge.textContent = `${data.total} anomalies`;
+
+      // Mini severity pills
+      const sev = data.by_severity || {};
+      stats.innerHTML = Object.entries(sev)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:0.75rem;display:flex;gap:6px;align-items:center">
+        <span class="badge badge-${k}">${k}</span>
+        <span style="font-weight:600;font-family:'JetBrains Mono',monospace">${v}</span>
+      </div>`
+        ).join('');
+
+      // Cards
+      const items = data.items || [];
+      const sevOrder = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+      items.sort((a, b) => (sevOrder[b.severity] || 0) - (sevOrder[a.severity] || 0));
+
+      grid.innerHTML = items.map(a => `
+    <div class="anomaly-card sev-${a.severity}">
+      <div class="anomaly-icon">${ANOMALY_ICONS[a.type] || '🔍'}</div>
+      <div class="anomaly-body">
+        <div class="anomaly-title">
+          <span class="badge badge-${a.severity}">${a.severity}</span>
+          ${a.type.replace(/_/g, ' ')}
+        </div>
+        <div class="anomaly-desc">${a.description}</div>
+        ${a.detail ? `<div class="anomaly-detail" title="${escHtml(a.detail)}">${escHtml(a.detail)}</div>` : ''}
+        <div class="anomaly-addr">${a.address} &nbsp;·&nbsp; ${a.size_kb} KB</div>
+      </div>
+    </div>
+  `).join('');
+    }
+
+    /* ─── Filter ──────────────────────────────────────────────────────────────── */
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('filter-input').addEventListener('input', e => {
+        const q = e.target.value.toLowerCase();
+        const filtered = allFindings.filter(f =>
+          f.category.toLowerCase().includes(q) ||
+          f.match.toLowerCase().includes(q) ||
+          f.severity.toLowerCase().includes(q)
+        );
+        renderFindings(filtered);
+      });
+    });
+
+    /* ─── Bootstrap ───────────────────────────────────────────────────────────── */
+    loadData().then(() => {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+
+      renderHeader(reportData);
+      renderStats(reportData);
+      renderSeverityChart(reportData);
+      renderCategoryChart(reportData);
+      renderTypesChart(regionsData);
+      renderMemoryMap(regionsData);
+      renderFindings(allFindings);
+      renderAnomalies(anomalyData);
+    }).catch(err => {
+      document.getElementById('loading').innerHTML =
+        `<div style="color:#f85149;font-family:monospace;text-align:center">
+      <div style="font-size:2rem">✗</div>
+      <div>${err.message}</div>
+      <div style="font-size:0.8rem;color:#8b949e;margin-top:8px">Make sure the Flask server is running</div>
+    </div>`;
+    });
+  </script>
+</body>
+
+</html>
