@@ -71,6 +71,7 @@
     </tbody>
   </table>
   {% if findings_omitted %}<p class="note">{{ findings_omitted }} lower-priority findings omitted. The JSON export has all of them.</p>{% endif %}
+  {% if r.capped %}<p class="note">Capped at {{ r.capped[0].cap }} distinct values for: {{ r.capped|map(attribute="category")|join(", ") }}. Counts for these are lower bounds.</p>{% endif %}
   {% else %}<p class="ok">No sensitive data found in the scanned memory.</p>{% endif %}
 
   <h2>Anomalies ({{ r.counts.anomalies }})</h2>

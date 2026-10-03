@@ -13,7 +13,7 @@ from typing import Callable, List, Optional
 from memorymap import __version__
 from memorymap.anomaly import Anomaly, AnomalyDetector
 from memorymap.reader import MemoryRegion, ProcessMemoryReader, process_name
-from memorymap.scanner import SEVERITY_RANK, Finding, SecretScanner
+from memorymap.scanner import SEVERITY_RANK, Finding, SecretScanner, pattern_info
 from memorymap.scoring import risk_label, risk_score
 
 MiB = 1024 * 1024
@@ -29,6 +29,7 @@ class ScanOptions:
     min_severity: str = "LOW"
     include_images: bool = False  # read-only module pages are identical to disk; skipping them is the big speed win
     chunk_size: int = 8 * MiB
+    max_values: int = 2000  # distinct values kept per low/medium pattern; bounds memory on text-heavy processes
 
 
 @dataclass
@@ -65,6 +66,7 @@ class ScanResult:
     findings: List[Finding]
     anomalies: List[Anomaly]
     options: ScanOptions = field(default_factory=ScanOptions)
+    capped: dict = field(default_factory=dict)  # pattern id -> cap reached; counts for these are lower bounds
     _index: Optional[tuple] = field(default=None, repr=False, compare=False)
 
     @property
@@ -155,6 +157,8 @@ class ScanResult:
                 for r in shown
             ] if include_regions else [],
             "regions_truncated": max(0, len(committed) - len(shown)),
+            "capped": [{"pattern": pid, "category": pattern_info(pid).category, "cap": cap}
+                       for pid, cap in sorted(self.capped.items())],
         }
 
 
@@ -193,7 +197,7 @@ def run_scan(
         progress.total_bytes = sum(r.size for r in committed if _scannable(r, options))
         progress.regions_total = len(committed)
 
-        scanner = SecretScanner(options.min_severity)
+        scanner = SecretScanner(options.min_severity, caps={"LOW": options.max_values, "MEDIUM": options.max_values})
         detector = AnomalyDetector()
         scanned = 0
         progress.phase = "scanning memory"
@@ -215,6 +219,7 @@ def run_scan(
             progress.anomalies = len(detector.anomalies)
             progress.findings = len(scanner)
 
+        detector.finalize()
         progress.phase = "finishing"
         findings = scanner.findings()
         progress.findings = len(findings)
@@ -230,5 +235,6 @@ def run_scan(
         scanned_bytes=scanned,
         findings=findings,
         anomalies=detector.sorted(),
+        capped=dict(scanner.capped),
         options=options,
     )

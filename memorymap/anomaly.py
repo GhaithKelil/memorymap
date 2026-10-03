@@ -78,6 +78,13 @@ _WEAK_STRINGS = re.compile(
     rb"|powershell(?:\.exe)?[ \t]+-(?:e|enc|encodedcommand)\b|\x90{24,}",
     re.IGNORECASE,
 )
+# Lower-case literals that must appear for the matching regex above to find anything.
+_STRONG_NEEDLES = (b"meterpreter", b"metasploit", b"reflectiveloader", b"reflective_loader", b"beacon.dll",
+                   b"mimikatz", b"sekurlsa::", b"reverse_tcp", b"reverse_http", b"cobaltstrike")
+_WEAK_NEEDLES = (b"ntunmapviewofsection", b"writeprocessmemory", b"createremotethread", b"virtualallocex",
+                 b"ntqueueapcthread", b"queueuserapc", b"setthreadcontext", b"ntloaddriver",
+                 b"zwsetsysteminformation", b"powershell")
+_NOP_SLED = b"\x90" * 24
 WEAK_STRING_MIN_DISTINCT = 3
 
 _PE_MACHINES = {0x014C, 0x8664, 0x01C0, 0xAA64}
@@ -143,6 +150,7 @@ class AnomalyDetector:
     def __init__(self) -> None:
         self.anomalies: List[Anomaly] = []
         self._region: Optional[MemoryRegion] = None
+        self._random_data: List[tuple] = []
         self._reset()
 
     def _reset(self) -> None:
@@ -168,9 +176,14 @@ class AnomalyDetector:
                 if pos < len(core):
                     self._pe.append(offset + pos)
         if r.kind != "Image":
-            self._strong.update(m.group().lower().decode("ascii", "replace")
-                                for m in _STRONG_STRINGS.finditer(data) if m.start() < len(core))
-            self._weak.update(_label(m.group()) for m in _WEAK_STRINGS.finditer(data) if m.start() < len(core))
+            # The case-insensitive regexes are slow over megabytes; a lower-cased substring test is not, and
+            # almost no chunk contains any of these strings, so the regexes rarely run.
+            lower = data.lower()
+            if any(n in lower for n in _STRONG_NEEDLES):
+                self._strong.update(m.group().lower().decode("ascii", "replace")
+                                    for m in _STRONG_STRINGS.finditer(data) if m.start() < len(core))
+            if _NOP_SLED in data or any(n in lower for n in _WEAK_NEEDLES):
+                self._weak.update(_label(m.group()) for m in _WEAK_STRINGS.finditer(data) if m.start() < len(core))
         if r.kind != "Image" and (r.executable or r.size >= ENTROPY_DATA_MIN_REGION):
             self._entropy = max(self._entropy, self._sample_entropy(core))
 
@@ -206,9 +219,12 @@ class AnomalyDetector:
             where = ", ".join(f"+0x{p:X}" for p in self._pe[:3])
             add(Kind.EMBEDDED_PE, "CRITICAL" if r.executable else "HIGH", f"PE header at {where}")
 
-        if high_entropy:
-            add(Kind.HIGH_ENTROPY, "HIGH" if r.executable else "LOW",
-                f"{self._entropy:.2f} bits/byte (threshold {entropy_limit})")
+        if high_entropy and r.executable:
+            add(Kind.HIGH_ENTROPY, "HIGH", f"{self._entropy:.2f} bits/byte (threshold {entropy_limit})")
+        elif high_entropy:
+            # Random-looking data regions are common (compressed or encrypted buffers); report them together
+            # in finalize() instead of burying real findings under one card per region.
+            self._random_data.append((r, self._entropy))
 
         if strings_hit:
             names = sorted(self._strong) + sorted(self._weak)
@@ -229,6 +245,23 @@ class AnomalyDetector:
             return 0.0
         step = max(1, (len(data) - ENTROPY_WINDOW) // 2) if len(data) > ENTROPY_WINDOW else len(data)
         return max(shannon_entropy(data[off:off + ENTROPY_WINDOW]) for off in range(0, len(data), step)[:3])
+
+    def finalize(self) -> None:
+        """Emit one summary anomaly for all random-looking, non-executable data regions."""
+        if not self._random_data:
+            return
+        regions = [r for r, _ in self._random_data]
+        largest = max(regions, key=lambda r: r.size)
+        total = sum(r.size for r in regions)
+        strongest = max(e for _, e in self._random_data)
+        size = f"{total / 2**20:.1f} MB" if total >= 2**20 else f"{total / 2**10:.0f} KB"
+        where = "region" if len(regions) == 1 else "regions"
+        self.anomalies.append(Anomaly(
+            Kind.HIGH_ENTROPY, "LOW", largest.base, total, largest.kind, largest.protect,
+            f"{len(regions)} data {where} with near-random content ({size} in total, up to {strongest:.2f} "
+            f"bits/byte); the largest is shown. Usually compressed or encrypted buffers.",
+            largest.mapped_file))
+        self._random_data = []
 
     def sorted(self) -> List[Anomaly]:
         return sorted(self.anomalies, key=lambda a: (-SEVERITY_RANK[a.severity], a.base))

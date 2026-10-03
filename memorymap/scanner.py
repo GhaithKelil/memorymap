@@ -158,6 +158,36 @@ PATTERNS: List[Pattern] = [
 _COMPILED = {p.id: re.compile(p.regex) for p in PATTERNS}
 _PATTERN_BY_ID = {p.id: p for p in PATTERNS}
 
+# Text a match cannot exist without (lower-case, any one of). A cheap substring test lets a chunk skip
+# patterns that cannot match, which is most of them for most chunks.
+PREFILTER = {
+    "private_key": ("private key",),
+    "aws_access_key": ("akia", "asia", "aroa", "aida", "agpa", "anpa", "anva", "aipa"),
+    "aws_secret_key": ("secret",),
+    "github_token": ("ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"),
+    "stripe_live_key": ("sk_live_", "rk_live_"),
+    "stripe_test_key": ("sk_test_", "rk_test_"),
+    "jwt": ("eyj",),
+    "bearer_token": ("bearer",),
+    "slack_token": ("xox",),
+    "google_api_key": ("aiza",),
+    "sendgrid_key": ("sg.",),
+    "password_assignment": ("password", "passwd", "pwd", "secret"),
+    "connection_string": ("://",),
+    "basic_auth_url": ("://",),
+    "email": ("@",),
+    "ethereum_address": ("0x",),
+    "url": ("http",),
+    "ip_port": (":",),
+    "api_path": ("/api/v",),
+}
+
+# Distinct values kept per pattern. A process full of text can hold millions of unique emails and URLs;
+# storing them all costs gigabytes and buries everything else. Low and medium severity patterns stop
+# being scanned once full; high and critical ones keep counting but stop storing new values.
+DEFAULT_CAPS = {"LOW": 2000, "MEDIUM": 2000, "HIGH": 20000, "CRITICAL": 20000}
+STOP_WHEN_FULL = {"LOW", "MEDIUM"}
+
 
 # --- findings ------------------------------------------------------------------------------------
 
@@ -234,10 +264,15 @@ class Finding:
 class SecretScanner:
     """Accumulates findings across chunks; identical values are merged and counted."""
 
-    def __init__(self, min_severity: str = "LOW", patterns: Optional[List[Pattern]] = None):
+    def __init__(self, min_severity: str = "LOW", patterns: Optional[List[Pattern]] = None,
+                 caps: Optional[Dict[str, int]] = None, prefilter: bool = True):
         floor = SEVERITY_RANK[min_severity]
         self._patterns = [p for p in (patterns or PATTERNS) if SEVERITY_RANK[p.severity] >= floor]
         self._found: Dict[tuple, Finding] = {}
+        self._caps = {**DEFAULT_CAPS, **(caps or {})}
+        self._stored: Dict[str, int] = {}
+        self._prefilter = prefilter
+        self.capped: Dict[str, int] = {}  # pattern id -> the cap it hit; counts for these are lower bounds
 
     def feed(self, data: bytes, base: int, core_len: Optional[int] = None) -> List["Finding"]:
         """Scan ``data`` mapped at ``base``; returns the findings seen for the first time.
@@ -268,8 +303,16 @@ class SecretScanner:
             starts.append(pos)
             pos += len(t) + 1
         blob = "\n".join(texts)
+        lower = blob.lower() if self._prefilter else None
 
         for pat in self._patterns:
+            cap = self._caps[pat.severity]
+            if self._stored.get(pat.id, 0) >= cap and pat.severity in STOP_WHEN_FULL:
+                self.capped[pat.id] = cap
+                continue
+            needs = PREFILTER.get(pat.id)
+            if lower is not None and needs and not any(n in lower for n in needs):
+                continue
             for m in pat.compiled.finditer(blob):
                 value = m.group(pat.group)
                 if not value or len(value) < 4 or (pat.validator and not pat.validator(value)):
@@ -281,6 +324,12 @@ class SecretScanner:
                 if existing:
                     existing.count += mult
                     continue
+                if self._stored.get(pat.id, 0) >= cap:
+                    self.capped[pat.id] = cap
+                    if pat.severity in STOP_WHEN_FULL:
+                        break
+                    continue
+                self._stored[pat.id] = self._stored.get(pat.id, 0) + 1
                 char_pos = m.start(pat.group) - starts[idx]
                 finding = Finding(
                     pattern=pat.id,
@@ -306,6 +355,8 @@ class SecretScanner:
     def scan(self, data: bytes, base: int = 0) -> List[Finding]:
         """One-shot convenience wrapper."""
         self._found.clear()
+        self._stored.clear()
+        self.capped.clear()
         self.feed(data, base)
         return self.findings()
 

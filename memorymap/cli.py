@@ -19,7 +19,7 @@ from memorymap.diff import (CLEAN, INCONCLUSIVE, MINOR, RESIDUE, VERDICT_TEXT, d
                             save_snapshot)
 from memorymap.reader import find_processes, is_admin, list_processes
 from memorymap.scan import MiB, Progress, ScanCancelled, ScanOptions, ScanResult, run_scan
-from memorymap.scanner import SEVERITY_RANK
+from memorymap.scanner import SEVERITY_RANK, pattern_info
 
 console = Console()
 err = Console(stderr=True)
@@ -95,7 +95,7 @@ def scan_with_progress(pid: int, options: ScanOptions) -> ScanResult:
 
 def options_from(args: argparse.Namespace) -> ScanOptions:
     return ScanOptions(min_severity=args.min_severity.upper(), include_images=args.include_images,
-                       chunk_size=args.chunk_mb * MiB)
+                       chunk_size=args.chunk_mb * MiB, max_values=args.max_values)
 
 
 # --- output --------------------------------------------------------------------------------------
@@ -128,6 +128,10 @@ def print_result(res: ScanResult, reveal: bool, top: int) -> None:
         hidden = len(res.findings) - top
         if hidden > 0:
             console.print(f"[dim]{hidden} more in --json / --html output[/dim]")
+        if res.capped:
+            names = ", ".join(pattern_info(pid).category for pid in sorted(res.capped))
+            console.print(f"[yellow]Capped at {min(res.capped.values()):,} distinct values: {names}. "
+                          f"Counts for these are lower bounds; raise --max-values to keep more.[/yellow]")
     elif not res.anomalies:
         console.print("[green]Nothing sensitive or suspicious found.[/green]")
 
@@ -263,6 +267,8 @@ def _scan_options(p: argparse.ArgumentParser) -> None:
                    help="ignore findings below this severity (default: low)")
     p.add_argument("--include-images", action="store_true",
                    help="also scan read-only, file-backed pages (slower; they match what is on disk)")
+    p.add_argument("--max-values", type=int, default=2000, metavar="N",
+                   help="distinct values kept per low/medium pattern (default: 2000); bounds memory on text-heavy processes")
     p.add_argument("--chunk-mb", type=int, default=8, help=argparse.SUPPRESS)
 
 
