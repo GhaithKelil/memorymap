@@ -1,5 +1,0 @@
-psutil
-pywin32
-flask
-colorama
-tabulate
