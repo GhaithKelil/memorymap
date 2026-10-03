@@ -134,36 +134,6 @@ def iso(w=760, h=420, n=10) -> str:
 
 # --- illustrations -------------------------------------------------------------------------------
 
-def hero(w=1280, h=300) -> str:
-    rnd = random.Random(7)
-    pitch, cell = 20, 15
-    cols, rows = w // pitch, h // pitch
-    scan_col = int(cols * 0.64)
-    hot = {(rnd.randrange(6, scan_col - 2), rnd.randrange(1, rows - 1)): rnd.choice(SEVERITY) for _ in range(15)}
-    out = []
-    for r in range(rows):
-        for c in range(cols):
-            x, y = c * pitch + (w - cols * pitch) / 2, r * pitch + (h - rows * pitch) / 2
-            if (c, r) in hot:
-                out.append(rect(x, y, cell, hot[(c, r)]))
-                continue
-            base = 0.30 if c < scan_col else 0.11
-            a = base * (0.45 + 0.55 * rnd.random())
-            if rnd.random() < 0.05:
-                a += 0.16
-            out.append(rect(x, y, cell, CELL, round(a, 3)))
-    sx = scan_col * pitch + (w - cols * pitch) / 2 - 2.5
-    out.append(f'<rect x="{sx - 90:.1f}" y="0" width="90" height="{h}" fill="url(#glow)"/>')
-    out.append(f'<rect x="{sx:.1f}" y="0" width="2.5" height="{h}" fill="{ACCENT}"/>')
-    defs = (f'<linearGradient id="glow" x1="0" x2="1"><stop offset="0" stop-color="{ACCENT}" stop-opacity="0"/>'
-            f'<stop offset="1" stop-color="{ACCENT}" stop-opacity="0.22"/></linearGradient>'
-            '<linearGradient id="fade" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/>'
-            '<stop offset="0.12" stop-color="#fff"/><stop offset="0.88" stop-color="#fff"/>'
-            '<stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>'
-            f'<mask id="m"><rect width="{w}" height="{h}" fill="url(#fade)"/></mask>')
-    return svg(w, h, f'<g mask="url(#m)">{"".join(out)}</g>', defs)
-
-
 def clean(w=520, h=300) -> str:
     cols, rows, pitch, cell = 21, 12, 24, 18
     ox, oy = (w - cols * pitch) / 2, (h - rows * pitch) / 2
@@ -258,11 +228,8 @@ def social(w=1280, h=640) -> str:
 
 ASSETS = {
     "logo": (logo(512), 512, 512, 1),
-    "logo-mark-dark": (logo(512, background=False, ink="#EEF1FF"), 512, 512, 1),
-    "logo-mark-light": (logo(512, background=False, ink="#1B2230", dim=0.10), 512, 512, 1),
     "favicon": (logo(64), 64, 64, 2),
     "hero": (iso(), 760, 420, 2),
-    "hero-grid": (hero(), 1280, 300, 2),
     "empty-clean": (clean(), 520, 300, 2),
     "empty-diff": (diff_scene(), 760, 300, 2),
     "social-preview": (social(), 1280, 640, 1),

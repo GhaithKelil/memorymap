@@ -61,7 +61,7 @@ Scan a process, click **Re-scan** after your action, and open the **Residue test
   | Offensive-tooling strings | Post-exploitation frameworks, or several injection API names together |
 
 - **Dashboard.** Works offline, in light or dark, and is built to be investigated rather than read:
-  - **Memory inspector.** Click any finding, anomaly or region to open a live hex dump of that memory, with the finding highlighted. Bytes belonging to secrets stay masked unless you start with `--reveal`. It reads the process as it is now, so a wiped secret shows up as zeros.
+  - **Memory inspector.** Click any finding, anomaly or region to open a live hex dump of that memory, with the finding highlighted. Bytes belonging to *detected* secrets stay masked unless you start with `--reveal`; anything the scanner did not recognise, including a secret in an unusual format, shows as it is. It reads the process as it is now, so a wiped secret shows up as zeros.
   - **Linked memory map.** The map is address-ordered and coloured by protection, with flagged regions marked. Click a region to inspect it, drag across it to zoom, or use *Show on map* from any finding.
   - **Live scan feed.** Findings and anomalies stream in while a scan runs, and you can cancel at any point.
   - **Command palette.** `Ctrl K` jumps between sections, searches findings and anomalies, starts scans and runs commands. Tables are sortable.
@@ -110,7 +110,7 @@ memorymap serve <printed PID>
 
 ## Safe by default
 
-- **Secrets are masked** everywhere (`AKIA••••••••••••LE`). Pass `--reveal` to show full values.
+- **Detected secrets are masked** everywhere (`AKIA••••••••••••LE`). Pass `--reveal` to show full values. The inspector's hex view also shows the raw bytes around a finding, and only recognised secrets are masked there.
 - **The dashboard binds to localhost** and rejects requests addressed to any other hostname, which blocks DNS-rebinding. Binding elsewhere prints a warning.
 - **Nothing is written to disk except what you ask for.** Dashboard snapshots live in memory, and the CLI writes only the files you name. The one exception is the fingerprint key (32 random bytes, created on first use in `%LOCALAPPDATA%\memorymap\`).
 - Everything runs locally. There is no network access, telemetry or CDN dependency.
@@ -123,6 +123,8 @@ memorymap serve <printed PID>
 - The diff ignores URLs, host:port and API paths, and low-severity data inside module images, which is static rather than runtime state.
 - A wiped secret can still exist in a place the scan cannot see, such as the pagefile.
 - Pattern matching produces some false positives, especially for emails and passwords. Treat the output as leads.
+- Low and medium severity patterns (URLs, emails and similar) keep at most 2,000 distinct values each, so a process full of text cannot exhaust memory. When a pattern hits the cap the scan says so, and its counts are lower bounds. `--max-values` changes the limit. High and critical patterns keep scanning and store up to 20,000 distinct values each.
+- Speed depends on how much text a process holds. On a deliberately hostile test process (617 MB, every line a unique email and URL, plus 300 MB of random bytes) a scan takes about a minute and the scanner stays under 60 MB. Real processes will differ, and text-heavy ones are the slow case.
 
 ## How it compares
 

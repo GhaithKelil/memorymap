@@ -813,7 +813,9 @@ function renderFindings(root) {
   const bar = el("div", { class: "toolbar" }, el("div", { class: "search" }, icon("search"), input, el("kbd", {}, "/")), sevSeg(), catSel);
 
   root.append(bar, el("div", { class: "panel" }, el("div", { class: "table-wrap" }, el("table", {}, thead, body)), more),
-    el("p", { class: "hint" }, "Select a row to inspect the memory around it."));
+    el("p", { class: "hint" }, "Select a row to inspect the memory around it."),
+    r.capped && r.capped.length ? el("p", { class: "hint", style: "color:var(--high)" },
+      `Capped at ${num(Math.min(...r.capped.map((c) => c.cap)))} distinct values: ${r.capped.map((c) => c.category).join(", ")}. Counts for these are lower bounds; the CLI's --max-values keeps more.`) : null);
   draw();
 }
 
