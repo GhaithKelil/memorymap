@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MemoryMap</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
+  <script src="{{ url_for('static', filename='theme.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='interaction.css') }}">
+</head>
+<body data-version="{{ version }}">
+  <div class="shell">
+    <aside class="side" id="side" aria-label="Navigation"></aside>
+    <div class="content">
+      <div id="banner" class="banner" hidden></div>
+      <header class="pagehead" id="pagehead"></header>
+      <main id="view" aria-live="polite"></main>
+    </div>
+  </div>
+  <div id="scrim" class="scrim" hidden></div>
+  <aside id="drawer" class="drawer" role="dialog" aria-label="Inspector" hidden></aside>
+  <div id="palette" class="palette" hidden>
+    <div class="palette-box" role="dialog" aria-label="Command palette">
+      <input id="palette-input" type="text" placeholder="Search findings, jump to a section, or run a command" autocomplete="off" spellcheck="false" aria-label="Command palette">
+      <ul id="palette-list" class="palette-list" role="listbox"></ul>
+      <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run</span><span><kbd>Esc</kbd> close</span></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

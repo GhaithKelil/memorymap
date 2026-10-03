@@ -17,8 +17,12 @@ env/
 .venv/
 .env
 
-# Reports output (generated files)
+# Generated output
 reports/output/
+*.before.json
+*.after.json
+*.snapshot.json
+fingerprint.key
 
 # Logs
 *.log
