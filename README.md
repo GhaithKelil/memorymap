@@ -126,6 +126,16 @@ memorymap serve <printed PID>
 - Low and medium severity patterns (URLs, emails and similar) keep at most 2,000 distinct values each, so a process full of text cannot exhaust memory. When a pattern hits the cap the scan says so, and its counts are lower bounds. `--max-values` changes the limit. High and critical patterns keep scanning and store up to 20,000 distinct values each.
 - Speed depends on how much text a process holds. On a deliberately hostile test process (617 MB, every line a unique email and URL, plus 300 MB of random bytes) a scan takes about a minute and the scanner stays under 60 MB. Real processes will differ, and text-heavy ones are the slow case.
 
+## Background
+
+Checking whether secrets outlive their use is not new, and MemoryMap builds on existing work.
+
+- The study [Keep your memory dump shut](https://arxiv.org/html/2404.00423v1) tested two dozen password managers by dumping each process's memory after unlocking, locking, idling and restarting, then searching the dumps for plaintext passwords. Most left secrets in RAM, including the master password while locked.
+- [TaintBochs](https://www.usenix.org/conference/13th-usenix-security-symposium/understanding-data-lifetime-whole-system-simulation) (USENIX Security 2004) tracked sensitive data through whole-system simulation and found that large applications such as Mozilla and Apache scatter passwords through memory and keep them there.
+- Security guidance for secret handling already recommends the same test: seed a known secret, run the code path, then inspect memory afterwards.
+
+Those approaches are mostly manual (dump, then search) or need a research simulator. MemoryMap automates the loop for a live Windows process: baseline, action, re-scan, then a verdict, an exit code a CI job can act on, and snapshots that never store the secrets themselves. I did not find another tool that packages it this way, but I have not searched exhaustively, so treat that as "built for", not "the only".
+
 ## How it compares
 
 [Volatility](https://github.com/volatilityfoundation/volatility3) and [MemProcFS](https://github.com/ufrisk/MemProcFS) analyse full memory dumps. [System Informer](https://systeminformer.sourceforge.io/) browses live process memory and strings. [PE-sieve](https://github.com/hasherezade/pe-sieve) and [Moneta](https://github.com/forrest-orr/moneta) are stronger at detecting injection. MemoryMap is not a replacement for any of them. It adds secret detection and the before-and-after residue workflow to a single live-scan tool.
