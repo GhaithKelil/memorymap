@@ -1,36 +1,62 @@
-<p align="center">
-  <img src="docs/img/banner.png" alt="MemoryMap: after logout, is the secret still in RAM?" width="100%">
-</p>
+# MemoryMap
 
-Live process memory forensics for Windows, built around one question: **after your app is done with a secret, is it still in RAM?**
+A command-line tool for Windows built around one question: **after your app is done with a secret, is it still in RAM?**
 
 MemoryMap scans a running process for credentials and personal data, flags injection-style memory anomalies, and can compare two snapshots to show which secrets survived an action such as logging out, locking a vault or closing a session.
-
-![Residue test: three secrets survived a logout, four were wiped](docs/img/residue.png)
-
-## Residue testing
-
-Most memory tools answer "what is in this process right now?" MemoryMap's focus is what is *still there afterwards*, which is the question developers, pentesters and incident responders ask when they want to know whether an application cleans up after itself.
-
-1. **Baseline.** Snapshot the process while the secret is in use (signed in, vault unlocked).
-2. **Act.** Do the thing that should make the app forget: sign out, lock, close the document.
-3. **Re-scan.** MemoryMap matches findings by fingerprint and reports each one as *still present*, *wiped* or *new*, with where it lives (heap or stack, module, mapped file) and how many copies existed before and after.
-
-The verdict is one of `RESIDUE` (high-severity secrets survived), `MINOR`, `CLEAN`, or `INCONCLUSIVE` (the baseline held nothing to wipe, so the test proves nothing).
-
-### From the command line
 
 ```
 memorymap residue 4321 --action "myapp.exe --logout"
 ```
 
-The command takes a baseline, runs your action, takes a second scan, prints the diff and exits non-zero if secrets survived, so it works as a regression test in CI:
+```
+┌─ Residue test ──────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  RESIDUE                                                                    │
+│  High-severity secrets are still in the process's memory after the action.  │
+│                                                                             │
+│  8 still present   4 wiped   0 new                                          │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+Status     Severity  Category         Value            Location          Copies
+persisted  HIGH      Bearer token     9f8e••••••••••…  Private memory     1 → 1
+                                                       (heap/stack)
+persisted  HIGH      Database         p••••••@db.int…  Private memory     1 → 1
+                     connection                        (heap/stack)
+                     string
+persisted  HIGH      JSON Web Token   eyJh••••••••••…  Private memory     1 → 1
+                                                       (heap/stack)
+  ... five MEDIUM email rows trimmed ...
+wiped      CRITICAL  AWS access key   AKIA••••••••••…  Private memory         1
+                     ID                                (heap/stack)
+wiped      CRITICAL  AWS secret       wJal••••••••••…  Private memory         1
+                     access key                        (heap/stack)
+wiped      CRITICAL  Payment card     4111••••••••••…  Private memory         1
+                     number                            (heap/stack)
+wiped      HIGH      Password         Tr•••••••        Private memory         2
+                     assignment                        (heap/stack)
+```
+
+That is real output from the demo process described below. Four secrets were wiped on "logout" and three high-severity ones were forgotten, which is exactly what the test should report.
+
+## Residue testing
+
+Most memory tools answer "what is in this process right now?" MemoryMap's focus is what is *still there afterwards*, which is the question developers, pentesters and incident responders ask when they want to know whether an application cleans up after itself.
+
+1. **Baseline.** Scan the process while the secret is in use (signed in, vault unlocked).
+2. **Act.** Do the thing that should make the app forget: sign out, lock, close the document.
+3. **Re-scan.** MemoryMap matches findings by fingerprint and reports each one as *still present*, *wiped* or *new*, with where it lives (heap or stack, module, mapped file) and how many copies existed before and after.
+
+The verdict is one of `RESIDUE` (high-severity secrets survived), `MINOR`, `CLEAN`, or `INCONCLUSIVE` (the baseline held nothing to wipe, so the test proves nothing).
+
+`memorymap residue` takes the baseline, runs your action (or waits for you, interactively, or for `--wait N` seconds), re-scans, prints the diff and exits non-zero if secrets survived, so it works as a regression test in CI:
 
 | Exit code | Meaning |
 |-----------|---------|
 | 0 | Clean, or only low-severity data survived |
 | 1 | Residue: high-severity secrets are still in memory |
+| 2 | `scan --fail-on` found something at or above the threshold |
 | 3 | Inconclusive: the baseline contained nothing to wipe |
+| 64 | Usage error (unknown process, bad file, and so on) |
 
 You can also do it in two steps and diff later:
 
@@ -42,10 +68,6 @@ memorymap diff before.json after.json
 ```
 
 Snapshot files never contain plaintext secrets. Each finding is stored as a masked preview plus a keyed fingerprint (an HMAC under a per-machine key in `%LOCALAPPDATA%\memorymap\`), so a snapshot is not a second copy of what you are trying to protect. The consequence is that snapshots can be diffed on the machine that made them.
-
-### In the dashboard
-
-Scan a process, click **Re-scan** after your action, and open the **Residue test** tab. Besides the diff table, it draws a **secret lifetime matrix**: one row per secret, one column per snapshot, a filled cell where the secret was in memory and a dashed one where it was wiped. Click any filled cell to see that secret's bytes.
 
 ## Everything else it does
 
@@ -60,19 +82,8 @@ Scan a process, click **Re-scan** after your action, and open the **Residue test
   | High-entropy content | Packed or encrypted code (T1027) |
   | Offensive-tooling strings | Post-exploitation frameworks, or several injection API names together |
 
-- **Dashboard.** Works offline, in light or dark, and is built to be investigated rather than read:
-  - **Memory inspector.** Click any finding, anomaly or region to open a live hex dump of that memory, with the finding highlighted. Bytes belonging to *detected* secrets stay masked unless you start with `--reveal`; anything the scanner did not recognise, including a secret in an unusual format, shows as it is. It reads the process as it is now, so a wiped secret shows up as zeros.
-  - **Linked memory map.** The map is address-ordered and coloured by protection, with flagged regions marked. Click a region to inspect it, drag across it to zoom, or use *Show on map* from any finding.
-  - **Live scan feed.** Findings and anomalies stream in while a scan runs, and you can cancel at any point.
-  - **Command palette.** `Ctrl K` jumps between sections, searches findings and anomalies, starts scans and runs commands. Tables are sortable.
-  - **Deep links.** `#findings&inspect=<address>` opens the inspector on a finding.
-- **Reports.** A self-contained HTML report (print it to PDF) and JSON export.
-
-![Inspector: a masked JSON Web Token highlighted in a live hex dump](docs/img/inspector.png)
-
-![Overview: risk score, severity counts, priority items](docs/img/overview.png)
-
-![Memory map: committed regions by address, coloured by protection](docs/img/memory.png)
+- **Reports.** `scan` can write a self-contained HTML report (print it to PDF) and a JSON export.
+- **A risk score** from 0 to 100 that rises with the number and severity of findings and anomalies.
 
 ## Install
 
@@ -89,31 +100,35 @@ Run from an elevated terminal to inspect protected processes or other users' pro
 ## Usage
 
 ```
-memorymap                       open the dashboard
-memorymap serve 4321            open it and scan PID 4321 (or a name like "chrome")
-memorymap list -f chrome        find a process
-memorymap scan 4321             terminal summary
+memorymap list -f chrome                     find a process by name or PID
+memorymap scan 4321                          scan a process (a name works too)
 memorymap scan 4321 --html report.html --json result.json
-memorymap scan 4321 --fail-on high      exit 2 if anything high or above is found
-memorymap residue 4321          interactive residue test
-memorymap snapshot / diff       save snapshots and compare them later
+memorymap scan 4321 --fail-on high           exit 2 if anything high or above is found
+memorymap scan 4321 --reveal                 show full secret values instead of masked ones
+memorymap residue 4321                       interactive residue test
+memorymap residue 4321 --action "cmd"        run a command between the two scans
+memorymap snapshot 4321 -o before.json       save a snapshot for a later diff
+memorymap diff before.json after.json        compare two snapshots
 ```
+
+`scan`, `snapshot` and `residue` also take `--min-severity`, `--include-images` and `--max-values`; run any command with `--help` for details. Run `memorymap scan` without a target to pick a process from a list.
 
 ### Try it safely
 
-`examples/demo_target.py` is a harmless process that holds well-known example credentials (AWS documentation keys, a Visa test number, a sample JWT), plants an RWX page with a PE-like header, and "logs out" when told to, wiping four secrets and forgetting three. A correct residue test reports exactly that.
+`examples/demo_target.py` is a harmless process that holds well-known example credentials (AWS documentation keys, a Visa test number, a sample JWT), plants an RWX page with a PE-like header, and "logs out" when a flag file appears, wiping four secrets and forgetting three. A correct residue test reports exactly that.
 
 ```
 python examples/demo_target.py
-memorymap serve <printed PID>
+memorymap residue <printed PID>
 ```
+
+The demo prints the path of its flag file. Create that file when the tool asks you to perform the action.
 
 ## Safe by default
 
-- **Detected secrets are masked** everywhere (`AKIA••••••••••••LE`). Pass `--reveal` to show full values. The inspector's hex view also shows the raw bytes around a finding, and only recognised secrets are masked there.
-- **The dashboard binds to localhost** and rejects requests addressed to any other hostname, which blocks DNS-rebinding. Binding elsewhere prints a warning.
-- **Nothing is written to disk except what you ask for.** Dashboard snapshots live in memory, and the CLI writes only the files you name. The one exception is the fingerprint key (32 random bytes, created on first use in `%LOCALAPPDATA%\memorymap\`).
-- Everything runs locally. There is no network access, telemetry or CDN dependency.
+- **Detected secrets are masked** in every output (`AKIA••••••••••••LE`). Only `scan --reveal` shows full values.
+- **Nothing is written to disk except what you ask for.** The commands write only the files you name. The one exception is the fingerprint key (32 random bytes, created on first use in `%LOCALAPPDATA%\memorymap\`).
+- Everything runs locally. There is no network access and no telemetry.
 
 ## Limits
 
@@ -152,9 +167,7 @@ memorymap/
   scoring.py    risk score
   report.py     HTML report
   cli.py        command line
-  web/          Flask dashboard
 examples/       demo target
-design/         brand and illustration assets (SVG sources and the script that renders the PNGs)
 tests/
 ```
 
@@ -165,7 +178,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The live tests launch the demo target as a separate process and run a real residue test against it.
+The CLI tests fake the scans; the live tests launch the demo target as a separate process and run a real residue test against it.
 
 ## License
 

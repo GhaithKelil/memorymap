@@ -34,7 +34,7 @@ class ScanOptions:
 
 @dataclass
 class Progress:
-    """Updated by the scan thread, read by whoever is watching (CLI or web)."""
+    """Updated while a scan runs, read by whoever is showing progress."""
     phase: str = "starting"
     total_bytes: int = 0
     done_bytes: int = 0
@@ -42,17 +42,10 @@ class Progress:
     regions_done: int = 0
     findings: int = 0
     anomalies: int = 0
-    seq: int = 0
-    feed: List[dict] = field(default_factory=list)  # most recent discoveries, masked
 
     @property
     def fraction(self) -> float:
         return min(1.0, self.done_bytes / self.total_bytes) if self.total_bytes else 0.0
-
-    def push(self, severity: str, label: str, detail: str) -> None:
-        self.seq += 1
-        self.feed.append({"seq": self.seq, "severity": severity, "label": label, "detail": detail})
-        del self.feed[:-100]
 
 
 @dataclass
@@ -207,14 +200,12 @@ def run_scan(
             detector.begin(region)
             if _scannable(region, options):
                 for offset, data, core in reader.read_chunks(region, options.chunk_size):
-                    for f in scanner.feed(data, region.base + offset, core):
-                        progress.push(f.severity, f.category, f.display(reveal=False, max_len=44))
+                    scanner.feed(data, region.base + offset, core)
                     detector.feed(data, offset, core)
                     progress.done_bytes += core
                     scanned += core
                     tick()
-            for a in detector.end():
-                progress.push(a.severity, a.as_dict()["title"], f"0x{a.base:X}")
+            detector.end()
             progress.regions_done += 1
             progress.anomalies = len(detector.anomalies)
             progress.findings = len(scanner)

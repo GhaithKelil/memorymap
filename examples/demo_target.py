@@ -8,9 +8,12 @@ When the flag file appears it "logs out": it wipes four of the seven secrets and
 forgets the other three (JWT, bearer token, database URL). A residue test should report exactly that.
 
     python examples/demo_target.py            # prints its PID and the flag path, then waits
-    memorymap serve --pid <PID>               # snapshot 1
-    echo. > <flag path>                       # the "log out"
-    # re-scan in the dashboard               -> snapshot 2, then open the Residue test tab
+    memorymap residue <PID>                   # takes the baseline, then asks you to do the action
+    echo. > <flag path>                       # the "log out"; then press Enter in the other terminal
+
+Or let the tool do the logging out for you:
+
+    memorymap residue <PID> --action "cmd /c type nul > <flag path> & ping -n 2 127.0.0.1 >nul"
 """
 
 import ctypes

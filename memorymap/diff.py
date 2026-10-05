@@ -50,24 +50,6 @@ def relevant(f: dict, sensitive_only: bool = True) -> bool:
     return not (in_module and SEVERITY_RANK[f["severity"]] < SEVERITY_RANK["HIGH"])
 
 
-def timeline(snapshots: List[dict]) -> dict:
-    """Per-secret presence across an ordered series of snapshots (the lifetime matrix)."""
-    n = len(snapshots)
-    rows: Dict[str, dict] = {}
-    for i, snap in enumerate(snapshots):
-        for f in snap["findings"]:
-            if not relevant(f):
-                continue
-            row = rows.setdefault(f["fp"], {
-                "fp": f["fp"], "category": f["category"], "severity": f["severity"],
-                "value": f["value"], "cells": [None] * n,
-            })
-            row["cells"][i] = {"count": f["count"], "address": f["address"], "where": f.get("where", "")}
-    ordered = sorted(rows.values(), key=lambda r: (-SEVERITY_RANK[r["severity"]],
-                                                   -sum(c is not None for c in r["cells"]), r["category"]))
-    return {"snapshots": [_meta(s) for s in snapshots], "rows": ordered}
-
-
 def diff_snapshots(before: dict, after: dict, sensitive_only: bool = True) -> dict:
     def index(snap: dict) -> Dict[str, dict]:
         return {f["fp"]: f for f in snap["findings"] if relevant(f, sensitive_only)}
