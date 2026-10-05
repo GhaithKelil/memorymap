@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "memorymap"
 dynamic = ["version"]
-description = "Live process memory forensics for Windows: secret scanning, injection anomalies and secret residue testing."
+description = "Command-line process memory forensics for Windows: secret scanning, injection anomalies and secret residue testing."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -20,7 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Topic :: Security",
 ]
-dependencies = ["psutil>=5.9", "flask>=3.0", "jinja2>=3.1", "rich>=13"]
+dependencies = ["psutil>=5.9", "jinja2>=3.1", "rich>=13"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -38,7 +38,7 @@ version = { attr = "memorymap.__version__" }
 include = ["memorymap*"]
 
 [tool.setuptools.package-data]
-memorymap = ["templates/*.html", "web/templates/*.html", "web/static/*.*", "web/static/img/*.png"]
+memorymap = ["templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

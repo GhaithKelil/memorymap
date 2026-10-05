@@ -252,14 +252,6 @@ def cmd_residue(args: argparse.Namespace) -> int:
     return verdict_exit_code(d["verdict"])
 
 
-def cmd_serve(args: argparse.Namespace) -> int:
-    from memorymap.web.app import serve
-    pid = resolve_target(args.target)[0] if args.target else None
-    serve(pid=pid, host=args.host, port=args.port, open_browser=not args.no_browser, reveal=args.reveal,
-          options=options_from(args))
-    return 0
-
-
 # --- argument parsing ----------------------------------------------------------------------------
 
 def _scan_options(p: argparse.ArgumentParser) -> None:
@@ -319,14 +311,6 @@ def build_parser() -> argparse.ArgumentParser:
     _scan_options(p)
     p.set_defaults(fn=cmd_residue)
 
-    p = sub.add_parser("serve", help="open the web dashboard")
-    p.add_argument("target", nargs="?", help="scan this PID or name on start")
-    p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=5000)
-    p.add_argument("--no-browser", action="store_true")
-    p.add_argument("--reveal", action="store_true", help="show full secret values in the dashboard")
-    _scan_options(p)
-    p.set_defaults(fn=cmd_serve)
     return ap
 
 
@@ -339,7 +323,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "fn", None):
-        args = parser.parse_args(["serve", *(argv or [])])  # bare `memorymap` opens the dashboard
+        parser.print_help()
+        return 0
     if sys.platform != "win32":
         err.print("[red]MemoryMap reads process memory through the Win32 API and only runs on Windows.[/red]")
         return EXIT_USAGE

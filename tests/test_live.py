@@ -66,27 +66,6 @@ def test_residue_test_against_a_real_process(demo):
     assert diff["verdict"] == RESIDUE
 
 
-def test_peek_redacts_secrets_unless_revealed(demo):
-    from memorymap.web.app import ScanManager, Snapshot, create_app
-
-    pid = demo[0]
-    result = run_scan(pid)
-    jwt = next(f for f in result.findings if f.category == "JSON Web Token")
-
-    def peek(reveal):
-        mgr = ScanManager(reveal=reveal)
-        mgr.snapshots.append(Snapshot(1, "#1", result))
-        body = create_app(mgr).test_client().get(f"/api/peek?id=1&address={jwt.address}&length=512").get_json()
-        return body, bytes(b for b in body["bytes"] if b is not None)
-
-    masked, text = peek(reveal=False)
-    assert b"eyJh" not in text and any(b is None for b in masked["bytes"])
-    assert masked["marks"] and masked["marks"][0]["redacted"]
-
-    shown, text = peek(reveal=True)
-    assert jwt.value.encode() in text and not any(b is None for b in shown["bytes"])
-
-
 def test_injection_style_anomalies_are_reported(demo):
     pid = demo[0]
     res = run_scan(pid)

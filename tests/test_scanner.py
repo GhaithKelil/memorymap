@@ -91,3 +91,11 @@ def test_fingerprint_is_stable_and_hides_value():
     assert a.fingerprint == b.fingerprint
     assert "AKIA" not in a.fingerprint
     assert a.fingerprint != scan(AWS_TEMP_KEY)[0].fingerprint
+
+
+def test_feed_reports_only_new_findings():
+    scanner = SecretScanner()
+    first = scanner.feed(b"AKIAIOSFODNN7EXAMPLE and 4111111111111111 ", 0)
+    assert {f.pattern for f in first} == {"aws_access_key", "credit_card"}
+    again = scanner.feed(b"AKIAIOSFODNN7EXAMPLE ", 0x1000)
+    assert again == [] and scanner.findings()[0].count >= 1  # a repeat is counted, not re-announced
