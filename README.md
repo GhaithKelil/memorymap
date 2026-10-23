@@ -107,7 +107,8 @@ A few things worth knowing before you aim it at real apps:
 
 - **It reads that app's memory,** so it can find real personal data. Everything is masked by default (`AKIA••••••••••••LE`), including the `--json` and `--html` files. Only `scan --reveal` prints full values, so use it deliberately, and treat any file you write with it as sensitive.
 - **Some processes won't open** unless the terminal is run as Administrator. The tool tells you when that's the problem.
-- **Big, text-heavy apps like browsers take longer.** A progress bar shows while it works.
+- **Big, text-heavy apps like browsers take longer.** A progress bar shows while it works. On an Edge tab showing a long Wikipedia page, a 150–215 MB scan took 10–19 seconds.
+- **32-bit apps work too.** A 64-bit Python can scan a 32-bit process; this was checked against the 32-bit `cmd.exe` in `SysWOW64`.
 
 ## What it finds
 
@@ -122,7 +123,7 @@ A few things worth knowing before you aim it at real apps:
   | High-entropy content | Packed or encrypted code (T1027) |
   | Offensive-tooling strings | Post-exploitation frameworks, or several injection API names together |
 
-- **A risk score** from 0 to 100 that rises with the number and severity of what it finds.
+- **A risk score** from 0 to 100 that rises with the number and severity of what it finds. Low and medium findings can add only so much, so a process full of URLs and emails stays at MEDIUM at most.
 - **Reports** you can keep: a self-contained HTML page (print it to PDF) and a JSON export.
 
 ## Use it as a test in CI
@@ -148,7 +149,8 @@ Snapshots never contain plaintext secrets. Each finding is stored as a masked pr
 <details>
 <summary><b>The honest limits</b></summary>
 
-- Findings describe what was in memory at scan time. They don't prove compromise, and executable unbacked memory is normal for JIT compilers and managed runtimes.
+- Findings describe what was in memory at scan time. They don't prove compromise, and executable unbacked memory is normal for JIT compilers and managed runtimes. Tools that hook into every process on purpose (customisers like Windhawk, antivirus, game overlays) will also show up as injection, because they are.
+- Scanning as Administrator hasn't been tested yet. Elevation should let it open more processes, but that's untested.
 - Read-only file-backed pages (module code, mapped files) are skipped because they match what's on disk. Use `--include-images` to scan them.
 - Paged-out memory, other processes and the kernel aren't covered. Scanning your own process includes the scanner's own strings.
 - A wiped secret can still exist somewhere the scan can't see, such as the pagefile.
