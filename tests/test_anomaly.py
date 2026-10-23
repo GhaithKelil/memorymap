@@ -84,3 +84,7 @@ def test_scoring_saturates_and_bands():
     assert risk_label(risk_score(["CRITICAL"] * 4)) == "CRITICAL"
     assert risk_label(risk_score(["LOW"] * 20)) == "LOW"
     assert risk_score(["CRITICAL"] * 1000) <= 100
+    # A browser tab's worth of URLs and emails must not reach the top bands on its own.
+    assert risk_label(risk_score(["LOW"] * 2000)) == "LOW"
+    assert risk_label(risk_score(["MEDIUM"] * 50 + ["LOW"] * 2000)) == "MEDIUM"
+    assert risk_label(risk_score(["CRITICAL"] * 4 + ["LOW"] * 2000)) == "CRITICAL"
